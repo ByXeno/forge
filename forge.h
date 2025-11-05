@@ -51,6 +51,7 @@ void da_free(da_list_t* list);
 void da_realloc(da_list_t* list);
 void da_clear(da_list_t* list);
 void da_pop(da_list_t* list);
+void da_append_cstr(da_list_t* list,char* element);
 
 
 #ifdef _WIN32
@@ -120,8 +121,10 @@ void forge_append_many_cmd_null
     va_list list;
     va_start(list,cmd);
     char* cur = va_arg(list,char*);
+    char* space = " ";
     while(cur)
     {
+#if 0
         int len = strlen(cur);
         if(len > MAX_STR_LEN)
         {
@@ -131,6 +134,11 @@ void forge_append_many_cmd_null
         }
         da_append(&cmd->list,cur);
         cur = va_arg(list,char*);
+        #else
+        da_append_cstr(&cmd->list,cur);
+        da_append_cstr(&cmd->list,space);
+        cur = va_arg(list,char*);
+        #endif
     }
     va_end(list);
 }
@@ -138,25 +146,8 @@ void forge_append_many_cmd_null
 bool forge_run_cmd_
 (Cmd* cmd,run_cmd_ctx_t ctx)
 {
-    uint32_t len = 0;
-    uint32_t i = 0;
-    for(;i < cmd->list.count;++i)
-    {
-        len += strlen((char*)da_get_element(&cmd->list,i)) + 1;
-    }
-    char* buf = calloc(len,sizeof(char));
-    for(i = 0;i < cmd->list.count;++i)
-    {
-        if(i == 0)
-        {
-            sprintf(buf,"%s",(char*)da_get_element(&cmd->list,i));
-            continue;
-        }
-        sprintf(buf,"%s %s",buf,(char*)da_get_element(&cmd->list,i));
-    }
-    forge_log(buf);
-    bool status = system(buf);
-    free(buf);
+    forge_log(cmd->list.data);
+    bool status = system(cmd->list.data);
     if(ctx.clear) forge_clear_cmd(cmd);
     if(ctx.free) forge_free_cmd(cmd);
     return status == 0;
@@ -165,7 +156,7 @@ bool forge_run_cmd_
 Cmd forge_make_cmd
 (void)
 {
-    return (Cmd){.list = da_create(sizeof(const char*)*MAX_STR_LEN/8)};
+    return (Cmd){.list = da_create(sizeof(const char))};
 }
 
 void forge_clear_cmd
@@ -250,6 +241,20 @@ void da_append
     uint32_t off = list->el_size*list->count;
     memcpy((uint8_t*)list->data + off, element, list->el_size);
     list->count++;
+}
+
+void da_append_cstr
+(da_list_t* list,char* element)
+{
+    if(!list) {Panic_Nullptr();}
+    if(!list->data) { Panic_Nullptr(); }
+    if(!element) {Panic_Nullptr();}
+    uint32_t len = strlen(element);
+    if(list->count+len >= list->capacity)
+    {da_realloc(list);da_append_cstr(list,element);return;}
+    uint32_t off = list->el_size*list->count;
+    memcpy((uint8_t*)list->data + off, element, len);
+    list->count+=len;
 }
 
 void* da_get_first
