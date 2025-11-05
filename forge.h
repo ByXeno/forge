@@ -60,13 +60,6 @@ void da_append_cstr(da_list_t* list,char* element);
 #define C_COMPILER "cc"
 #endif
 
-#ifndef MAX_STR_LEN
-#define MAX_STR_LEN 128
-#endif // MAX_STR_LEN
-#if MAX_STR_LEN % 8 != 0
-#error "MAX_STR_LEN must divisible with 8"
-#endif
-
 #ifndef FORGE_NOLOG
 #define forge_log(buf) printf("[Forge] %s\n",buf);
 #else
@@ -124,21 +117,9 @@ void forge_append_many_cmd_null
     char* space = " ";
     while(cur)
     {
-#if 0
-        int len = strlen(cur);
-        if(len > MAX_STR_LEN)
-        {
-            fprintf(stderr,"Please increase the MAX_STR_LEN "
-            "macro\nSupplied:%d\nNeeded:%d\n",
-            MAX_STR_LEN,len);
-        }
-        da_append(&cmd->list,cur);
-        cur = va_arg(list,char*);
-        #else
         da_append_cstr(&cmd->list,cur);
         da_append_cstr(&cmd->list,space);
         cur = va_arg(list,char*);
-        #endif
     }
     va_end(list);
 }
