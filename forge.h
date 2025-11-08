@@ -23,7 +23,7 @@
 #endif // FORGE_NOLOG
 
 #define forge_warn(str,...) printf("[Warning] " str "\n",__VA_ARGS__)
-#define forge_panic(str,...) fprintf(stderr,"[Panic] "str,__VA_ARGS__)
+#define forge_panic(str,...) fprintf(stderr,"[Panic] "str "\n",__VA_ARGS__)
 #define FORGE_TODO(...) assert(0 && __VA_ARGS__)
 
 #ifndef DEVELOPMENT_FLAGS

@@ -388,10 +388,39 @@ void cross_log(const char* tag,const char* fmt,...) {
     va_end(args);
 }
 
-void cross_log_info(const char* fmt,...){ if(cross_log_level_current<=CROSS_LOG_INFO){ va_list a; va_start(a,fmt); cross_log("INFO",fmt,a); va_end(a); } }
-void cross_log_warn(const char* fmt,...){ if(cross_log_level_current<=CROSS_LOG_WARN){ va_list a; va_start(a,fmt); cross_log("WARN",fmt,a); va_end(a); } }
-void cross_log_err(const char* fmt,...){ if(cross_log_level_current<=CROSS_LOG_ERROR){ va_list a; va_start(a,fmt); cross_log("ERR",fmt,a); va_end(a); } }
-void cross_log_debug(const char* fmt,...){ if(cross_log_level_current<=CROSS_LOG_DEBUG){ va_list a; va_start(a,fmt); cross_log("DEBUG",fmt,a); va_end(a); } }
+void cross_log_info(const char* fmt,...)
+{
+    if(cross_log_level_current<=CROSS_LOG_INFO)
+    {
+        va_list a;
+        va_start(a,fmt);
+        cross_log("INFO",fmt,a);
+        va_end(a);
+    }
+}
+
+void cross_log_warn(const char* fmt,...)
+{
+    if(cross_log_level_current<=CROSS_LOG_WARN)
+    { va_list a; va_start(a,fmt); cross_log("WARN",fmt,a); va_end(a); }
+}
+
+void cross_log_err(const char* fmt,...)
+{
+    if(cross_log_level_current<=CROSS_LOG_ERROR)
+    { va_list a; va_start(a,fmt); cross_log("ERR",fmt,a); va_end(a); }
+}
+
+void cross_log_debug(const char* fmt,...)
+{
+    if(cross_log_level_current<=CROSS_LOG_DEBUG)
+    {
+        va_list a;
+        va_start(a,fmt);
+        cross_log("DEBUG",fmt,a);
+        va_end(a);
+    }
+}
 
 //──────────────────────────────
 // SYSTEM / USER
