@@ -41,6 +41,7 @@ bool        cross_is_posix(void);
 bool     cross_file_exists(const char* path);
 bool     cross_dir_exists(const char* path);
 bool     cross_mkdir(const char* path);
+bool     cross_mkdir_ifnot_exists(const char* path);
 bool     cross_remove(const char* path);
 bool     cross_rename(const char* from, const char* to);
 int64_t  cross_file_size(const char* path);
@@ -244,6 +245,13 @@ bool cross_mkdir(const char* path) {
 #else
     return mkdir(path,0755)==0 || errno==EEXIST;
 #endif
+}
+
+bool cross_mkdir_ifnot_exists(const char* path) {
+    if(!cross_dir_exists(path)) {
+        return cross_mkdir(path);
+    }
+    return true;
 }
 
 bool cross_remove(const char* path) {

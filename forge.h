@@ -144,15 +144,6 @@ typedef struct {
     const uint32_t dep_c;
 } forge_target_t;
 
-#define FORGE_TARGET(name, output_name, ...) \
-    static const char *name##_depends[] = { __VA_ARGS__ }; \
-    static const forge_target_t name = { \
-        .output = output_name, \
-        .depend = name##_depends, \
-        .dep_c = sizeof(name##_depends) / sizeof(*name##_depends), \
-    };
-
-
 typedef struct {
     cross_thread_t** data;
     uint32_t count;
@@ -169,6 +160,22 @@ typedef struct {
 bool forge_build_target_(forge_target_t target,forge_build_target_ctx_t ctx);
 void forge_wait_async_group(async_group_t* group);
 async_group_t forge_create_async_group(void);
+
+#define FORGE_TARGET(name, output_name, ...) \
+    static const char *name##_depends[] = { __VA_ARGS__ }; \
+    static const forge_target_t name = { \
+        .output = output_name, \
+        .depend = name##_depends, \
+        .dep_c = sizeof(name##_depends) / sizeof(*name##_depends), \
+    };
+
+#define FORGE_TARGET_BUILD(name,output_name,...)
+    FORGE_TARGET(name,output_name,__VA_ARGS__); \
+    forge_build_target(name);
+
+#define FORGE_TARGET_BUILD_ASYNC(group,name,output_name,...)
+    FORGE_TARGET(name,output_name,__VA_ARGS__); \
+    forge_build_target(name,.async = group);
 
 #endif // FORGE_H_
 
@@ -257,6 +264,8 @@ bool forge_check_timestaps_after_list
     uint32_t i = 0;
     for(;i < count;++i)
     {
+        // Skip flags
+        if(*paths[i] == '-') continue;
         if(!forge_check_timestaps_1after2(file,paths[i]))
         return true;
     }
@@ -268,10 +277,6 @@ bool forge_check_timestaps_1after2
 {
     int64_t first = cross_file_mtime(path1);
     int64_t second = cross_file_mtime(path2);
-    if(first == -1)
-        forge_warn("no file named %s",path1);
-    if(second == -1)
-        forge_warn("no file named %s",path2);
     return first > second;
 }
 
