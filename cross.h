@@ -386,49 +386,72 @@ void cross_log_set_level(cross_log_level level) { cross_log_level_current=level;
 void cross_log_to_file(const char* path) { if(path) cross_log_file=fopen(path,"a"); }
 void cross_log_timestamp(bool enabled) { cross_log_ts=enabled; }
 
-void cross_log(const char* tag,const char* fmt,...) {
-    if(cross_log_level_current>CROSS_LOG_DEBUG) return;
-    va_list args; va_start(args,fmt);
-    if(cross_log_ts) { time_t t=time(NULL); struct tm tm; localtime_r(&t,&tm); printf("[%02d:%02d:%02d]",tm.tm_hour,tm.tm_min,tm.tm_sec); if(cross_log_file) fprintf(cross_log_file,"[%02d:%02d:%02d]",tm.tm_hour,tm.tm_min,tm.tm_sec); }
-    printf("[%s] ",tag); if(cross_log_file) fprintf(cross_log_file,"[%s] ",tag);
-    vprintf(fmt,args); if(cross_log_file) vfprintf(cross_log_file,fmt,args);
-    printf("\n"); if(cross_log_file) fprintf(cross_log_file,"\n");
-    va_end(args);
+void cross_log_va(const char* tag, const char* fmt, va_list args)
+{
+    if (cross_log_level_current > CROSS_LOG_DEBUG)
+        return;
+    va_list copy;
+    va_copy(copy, args);
+    if (cross_log_ts) {
+        time_t t = time(NULL);
+        struct tm tm;
+        localtime_r(&t, &tm);
+        printf("[%02d:%02d:%02d]", tm.tm_hour, tm.tm_min, tm.tm_sec);
+        if (cross_log_file)
+            fprintf(cross_log_file, "[%02d:%02d:%02d]", tm.tm_hour, tm.tm_min, tm.tm_sec);
+    }
+    printf("[%s] ", tag);
+    if (cross_log_file)
+        fprintf(cross_log_file, "[%s] ", tag);
+    vprintf(fmt, args);
+    if (cross_log_file)
+        vfprintf(cross_log_file, fmt, copy);
+    printf("\n");
+    if (cross_log_file)
+        fprintf(cross_log_file, "\n");
+    va_end(copy);
 }
 
-void cross_log_info(const char* fmt,...)
+void cross_log_info(const char* fmt, ...)
 {
-    if(cross_log_level_current<=CROSS_LOG_INFO)
-    {
+    if (cross_log_level_current <= CROSS_LOG_INFO) {
         va_list a;
-        va_start(a,fmt);
-        cross_log("INFO",fmt,a);
+        va_start(a, fmt);
+        cross_log_va("INFO", fmt, a);
         va_end(a);
     }
 }
 
-void cross_log_warn(const char* fmt,...)
+void cross_log_warn(const char* fmt, ...)
 {
-    if(cross_log_level_current<=CROSS_LOG_WARN)
-    { va_list a; va_start(a,fmt); cross_log("WARN",fmt,a); va_end(a); }
-}
-
-void cross_log_err(const char* fmt,...)
-{
-    if(cross_log_level_current<=CROSS_LOG_ERROR)
-    { va_list a; va_start(a,fmt); cross_log("ERR",fmt,a); va_end(a); }
-}
-
-void cross_log_debug(const char* fmt,...)
-{
-    if(cross_log_level_current<=CROSS_LOG_DEBUG)
-    {
+    if (cross_log_level_current <= CROSS_LOG_WARN) {
         va_list a;
-        va_start(a,fmt);
-        cross_log("DEBUG",fmt,a);
+        va_start(a, fmt);
+        cross_log_va("WARN", fmt, a);
         va_end(a);
     }
 }
+
+void cross_log_err(const char* fmt, ...)
+{
+    if (cross_log_level_current <= CROSS_LOG_ERROR) {
+        va_list a;
+        va_start(a, fmt);
+        cross_log_va("ERR", fmt, a);
+        va_end(a);
+    }
+}
+
+void cross_log_debug(const char* fmt, ...)
+{
+    if (cross_log_level_current <= CROSS_LOG_DEBUG) {
+        va_list a;
+        va_start(a, fmt);
+        cross_log_va("DEBUG", fmt, a);
+        va_end(a);
+    }
+}
+
 
 //──────────────────────────────
 // SYSTEM / USER

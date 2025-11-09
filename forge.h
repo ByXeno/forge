@@ -24,13 +24,25 @@
 #endif // C_COMPILER
 
 #ifndef FORGE_NOLOG
-#define forge_log(str,...) printf("[Forge] " str "\n",##__VA_ARGS__)
+#ifndef forge_log
+#define forge_log cross_log_info
+#endif // forge_log
 #else
-#define forge_log(...)
+#define forge_log
 #endif // FORGE_NOLOG
 
-#define forge_warn(str,...) printf("[Warning] " str "\n",##__VA_ARGS__)
-#define forge_panic(str,...) fprintf(stderr,"[Panic] "str "\n",##__VA_ARGS__)
+#ifndef FORGE_NOWARN
+#ifndef forge_warn
+#define forge_warn cross_log_warn
+#endif // forge_warn
+#else
+#define forge_warn
+#endif // FORGE_NOLOG
+
+#ifndef forge_error
+#define forge_error cross_log_err
+#endif // forge_error
+
 #define FORGE_TODO(...) assert(0 && __VA_ARGS__)
 
 // Compiler detection
@@ -169,11 +181,11 @@ async_group_t forge_create_async_group(void);
         .dep_c = sizeof(name##_depends) / sizeof(*name##_depends), \
     };
 
-#define FORGE_TARGET_BUILD(name,output_name,...)
+#define FORGE_TARGET_BUILD(name,output_name,...) \
     FORGE_TARGET(name,output_name,__VA_ARGS__); \
     forge_build_target(name);
 
-#define FORGE_TARGET_BUILD_ASYNC(group,name,output_name,...)
+#define FORGE_TARGET_BUILD_ASYNC(group,name,output_name,...) \
     FORGE_TARGET(name,output_name,__VA_ARGS__); \
     forge_build_target(name,.async = group);
 
@@ -234,6 +246,8 @@ bool forge_build_target_
         uint32_t i = 0;
         for(;i < target.dep_c;++i)
         {
+            if(!(*target.depend[i])) continue;
+            if(target.depend[i][strlen(target.depend[i])-1] == 'h') continue;
             forge_append_cmd(&cmd,target.depend[i]);
         }
         if(!ctx.async)
@@ -285,7 +299,7 @@ bool forge_rename
 {
     forge_log("%s -> %s",from,to);
     if (cross_rename(from, to) < 0) {
-        forge_panic("could not rename %s to %s", from, to);
+        forge_error("could not rename %s to %s", from, to);
         return false;
     }
     return true;
@@ -296,7 +310,7 @@ bool forge_rm_path
 {
     forge_log("Removing %s",path);
     if(!cross_remove(path)){
-        forge_panic("could not remove file %s",path);
+        forge_error("could not remove file %s",path);
         return false;
     }
     return true;
