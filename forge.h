@@ -112,9 +112,10 @@
 
 #define forge_da_append_null(list) forge_da_append(list,0)
 #define forge_da_append_cstr(list,str) forge_da_append_many(list,str,strlen(str))
-#define forge_da_clear(list) memset(list.data,0,list.capacity)
+#define forge_da_clear(list) \
+do {memset((list)->data,0,(list)->capacity); (list)->count = 0; } while(0)
 #define forge_da_free(list) \
-do { free((list).data); (list).data = NULL; (list).count = 0; (list).capacity = 0; } while(0)
+do { free((list)->data); (list)->data = NULL; (list)->count = 0; (list)->capacity = 0; } while(0)
 
 typedef struct {
     char* data;
@@ -172,6 +173,7 @@ typedef struct {
 bool forge_build_target_(forge_target_t target,forge_build_target_ctx_t ctx);
 void forge_wait_async_group(async_group_t* group);
 async_group_t forge_create_async_group(void);
+void forge_async_group_free(async_group_t* group);
 
 #define FORGE_TARGET(name, output_name, ...) \
     static const char *name##_depends[] = { __VA_ARGS__ }; \
@@ -194,6 +196,15 @@ async_group_t forge_create_async_group(void);
 #ifdef FORGE_IMPLEMENTATION
 #ifndef FORGE_IS_FIRST_IMPLEMENTATION
 #define FORGE_IS_FIRST_IMPLEMENTATION
+
+void forge_async_group_free
+(async_group_t* group)
+{
+    free(group->data);
+    group->count = 0;
+    group->capacity = 0;
+    cross_mutex_destroy(group->mutex);
+}
 
 async_group_t forge_create_async_group
 (void)
@@ -337,10 +348,10 @@ void forge_rebuild_yourself_
         {
             forge_rename(path,old_name.data);
         }
-        forge_da_free(old_name);
+        forge_da_free(&old_name);
         exit(0);
     }
-    forge_da_free(old_name);
+    forge_da_free(&old_name);
 }
 
 void forge_append_many_cmd_null
@@ -373,19 +384,19 @@ bool forge_run_cmd_
     forge_log("%s",cmd->list.data);
     bool status = system(cmd->list.data);
     if(!ctx.no_fail_log && status) forge_log("[FAILED] %s",cmd->list.data);
-    if(ctx.clear) forge_da_clear(cmd->list);
-    if(ctx.free) forge_da_free(cmd->list);
+    if(ctx.clear) forge_da_clear(&cmd->list);
+    if(ctx.free) forge_da_free(&cmd->list);
     return status == 0;
 }
 
 void forge_free_cmd(cmd_t* cmd)
 {
-    forge_da_free(cmd->list);    
+    forge_da_free(&cmd->list);
 }
 
 void forge_clear_cmd(cmd_t* cmd)
 {
-    forge_da_clear(cmd->list);    
+    forge_da_clear(&cmd->list);
 }
 
 #endif // FORGE_IS_FIRST_IMPLEMENTATION
