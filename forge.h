@@ -37,7 +37,7 @@
 #endif // forge_warn
 #else
 #define forge_warn
-#endif // FORGE_NOLOG
+#endif // FORGE_NOWARN
 
 #ifndef forge_error
 #define forge_error cross_log_err
@@ -302,6 +302,8 @@ bool forge_check_timestaps_1after2
 {
     int64_t first = cross_file_mtime(path1);
     int64_t second = cross_file_mtime(path2);
+    if (first < 0) return false;
+    if (second < 0)  return false;
     return first > second;
 }
 
