@@ -1,6 +1,13 @@
 #ifndef FORGE_H_
 #define FORGE_H_
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <stdarg.h>
+#include <assert.h>
+#include <string.h>
 #ifdef FORGE_IMPLEMENTATION
 #define CROSS_IMPLEMENTATION
 #include "cross.h"
@@ -17,34 +24,48 @@
 #endif // C_COMPILER
 
 #ifndef FORGE_NOLOG
-#define forge_log(str,...) printf("[Forge] " str "\n",__VA_ARGS__)
+#define forge_log(str,...) printf("[Forge] " str "\n",##__VA_ARGS__)
 #else
 #define forge_log(...)
 #endif // FORGE_NOLOG
 
-#define forge_warn(str,...) printf("[Warning] " str "\n",__VA_ARGS__)
-#define forge_panic(str,...) fprintf(stderr,"[Panic] "str "\n",__VA_ARGS__)
+#define forge_warn(str,...) printf("[Warning] " str "\n",##__VA_ARGS__)
+#define forge_panic(str,...) fprintf(stderr,"[Panic] "str "\n",##__VA_ARGS__)
 #define FORGE_TODO(...) assert(0 && __VA_ARGS__)
 
-#ifndef DEVELOPMENT_FLAGS
-#define DEVELOPMENT_FLAGS "-Wall -Wextra -Wpedantic -O0 -DDEBUG"
-#endif // DEVELOPMENT_FLAGS
+// Compiler detection
+#ifdef _WIN32
+    #define IS_MSVC 1
+#else
+    #define IS_MSVC 0
+#endif
 
+// DEVELOPMENT FLAGS
+#if IS_MSVC
+    #ifndef DEVELOPMENT_FLAGS
+    #define DEVELOPMENT_FLAGS "/W3 /Od /DDEBUG"
+    #endif
+#else
+    #ifndef DEVELOPMENT_FLAGS
+    #define DEVELOPMENT_FLAGS "-Wall -Wextra -Wpedantic -O0 -DDEBUG"
+    #endif
+#endif
+
+// DEBUG FLAGS (can inherit development flags)
 #ifndef DEBUG_FLAGS
-#define DEBUG_FLAGS DEVELOPMENT_FLAGS 
-#endif // DEBUG_FLAGS
+#define DEBUG_FLAGS DEVELOPMENT_FLAGS
+#endif
 
-#ifndef RELEASE_FLAGS
-#define RELEASE_FLAGS "-O3 -flto"
-#endif // RELEASE_FLAGS
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include <stdarg.h>
-#include <assert.h>
-#include <string.h>
+// RELEASE FLAGS
+#if IS_MSVC
+    #ifndef RELEASE_FLAGS
+    #define RELEASE_FLAGS "/O2 /GL"
+    #endif
+#else
+    #ifndef RELEASE_FLAGS
+    #define RELEASE_FLAGS "-O3 -flto"
+    #endif
+#endif
 
 #ifndef FORGE_INIT_CAP
 #define FORGE_INIT_CAP 16
@@ -79,9 +100,10 @@
 
 #define forge_da_append_null(list) forge_da_append(list,0)
 #define forge_da_append_cstr(list,str) forge_da_append_many(list,str,strlen(str))
-#define forge_da_free(list) free(list.data)
 #define forge_da_clear(list) memset(list.data,0,list.capacity)
-    
+#define forge_da_free(list) \
+do { free((list).data); (list).data = NULL; (list).count = 0; (list).capacity = 0; } while(0)
+
 typedef struct {
     char* data;
     uint32_t count;
@@ -90,14 +112,14 @@ typedef struct {
 
 typedef struct {
     string_t list;
-} Cmd;
+} cmd_t;
 
-Cmd forge_make_cmd(void);
+cmd_t forge_make_cmd(void);
 #define forge_append_cmd(cmd,...) \
     forge_append_many_cmd_null(cmd,__VA_ARGS__,NULL)
-void forge_append_many_cmd_null(Cmd* cmd,...);
-void forge_clear_cmd(Cmd* cmd);
-void forge_free_cmd(Cmd* cmd);
+void forge_append_many_cmd_null(cmd_t* cmd,...);
+void forge_clear_cmd(cmd_t* cmd);
+void forge_free_cmd(cmd_t* cmd);
 
 #define forge_rebuild_yourself() forge_rebuild_yourself_(argv[0],__FILE__)
 void forge_rebuild_yourself_(char* path,char* src);
@@ -114,7 +136,7 @@ typedef struct {
 
 #define forge_run_cmd(cmd,...) \
     forge_run_cmd_(cmd,(run_cmd_ctx_t){__VA_ARGS__})
-bool forge_run_cmd_(Cmd* cmd,run_cmd_ctx_t ctx);
+bool forge_run_cmd_(cmd_t* cmd,run_cmd_ctx_t ctx);
 
 typedef struct {
     const char* output;
@@ -130,7 +152,23 @@ typedef struct {
         .dep_c = sizeof(name##_depends) / sizeof(*name##_depends), \
     };
 
-bool forge_build_target(forge_target_t target);
+
+typedef struct {
+    cross_thread_t** data;
+    uint32_t count;
+    uint32_t capacity;
+    cross_mutex_t* mutex;
+} async_group_t;
+
+typedef struct {
+    async_group_t* async;
+} forge_build_target_ctx_t;
+
+#define forge_build_target(target,...) \
+    forge_build_target_(target,(forge_build_target_ctx_t){__VA_ARGS__})
+bool forge_build_target_(forge_target_t target,forge_build_target_ctx_t ctx);
+void forge_wait_async_group(async_group_t* group);
+async_group_t forge_create_async_group(void);
 
 #endif // FORGE_H_
 
@@ -138,13 +176,52 @@ bool forge_build_target(forge_target_t target);
 #ifndef FORGE_IS_FIRST_IMPLEMENTATION
 #define FORGE_IS_FIRST_IMPLEMENTATION
 
-bool forge_build_target
-(forge_target_t target)
+async_group_t forge_create_async_group
+(void)
+{
+    async_group_t group = {0};
+    group.mutex = cross_mutex_create();
+    return group;
+}
+
+void forge_wait_async_group
+(async_group_t* group)
+{
+    cross_mutex_lock(group->mutex);
+    for (uint32_t i = 0; i < group->count; ++i) {
+        cross_thread_t* t = group->data[i];
+        if (t) {
+            cross_mutex_unlock(group->mutex);
+            cross_thread_join(t);
+            cross_mutex_lock(group->mutex);
+            group->data[i] = NULL;
+        }
+    }
+    cross_mutex_unlock(group->mutex);
+}
+
+typedef struct {
+    cmd_t cmd;
+    uint32_t index;
+    async_group_t* group;
+} forge_run_async_ctx;
+
+void forge_run_async
+(void* arg)
+{
+    forge_run_async_ctx* ctx = (forge_run_async_ctx*)arg;
+    forge_run_cmd(&ctx->cmd,.free = true);
+    ctx->group->data[ctx->index] = 0;
+    free(ctx);
+}
+
+bool forge_build_target_
+(forge_target_t target,forge_build_target_ctx_t ctx)
 {
     if(forge_check_timestaps_after_list(
     target.output,target.depend,target.dep_c))
     {
-        Cmd cmd = {0};
+        cmd_t cmd = {0};
         forge_append_cmd(&cmd,C_COMPILER);
         forge_append_cmd(&cmd,"-o",target.output);
         uint32_t i = 0;
@@ -152,8 +229,25 @@ bool forge_build_target
         {
             forge_append_cmd(&cmd,target.depend[i]);
         }
-        return forge_run_cmd(&cmd,.free = true);
+        if(!ctx.async)
+        {
+            return forge_run_cmd(&cmd,.free = true);
+        }
+        else
+        {
+            cross_mutex_lock(ctx.async->mutex);
+            cross_thread_t* thread = 0;
+            forge_run_async_ctx* as_ctx = malloc(sizeof(forge_run_async_ctx));
+            as_ctx->cmd = cmd;
+            as_ctx->index = ctx.async->count;
+            as_ctx->group = ctx.async;
+            thread = cross_thread_create(forge_run_async,as_ctx);
+            forge_da_append(ctx.async,thread);
+            cross_mutex_unlock(ctx.async->mutex);
+            return true;
+        }
     }
+    forge_log("'%s' is up to date! Skipping...",target.output);
     return true;
 }
 
@@ -175,9 +269,9 @@ bool forge_check_timestaps_1after2
     int64_t first = cross_file_mtime(path1);
     int64_t second = cross_file_mtime(path2);
     if(first == -1)
-        forge_panic("no file named %s",path1);
+        forge_warn("no file named %s",path1);
     if(second == -1)
-        forge_panic("no file named %s",path2);
+        forge_warn("no file named %s",path2);
     return first > second;
 }
 
@@ -187,16 +281,20 @@ bool forge_rename
     forge_log("%s -> %s",from,to);
     if (cross_rename(from, to) < 0) {
         forge_panic("could not rename %s to %s", from, to);
+        return false;
     }
+    return true;
 }
 
-void forge_rm_path
+bool forge_rm_path
 (char* path)
 {
     forge_log("Removing %s",path);
     if(!cross_remove(path)){
         forge_panic("could not remove file %s",path);
+        return false;
     }
+    return true;
 }
 
 void forge_rebuild_yourself_
@@ -210,7 +308,7 @@ void forge_rebuild_yourself_
     forge_da_append_null(&old_name);
     if(need_rebuild) {
         forge_rename(old_name.data,path);
-        Cmd cmd = {0};
+        cmd_t cmd = {0};
         forge_append_cmd(&cmd,C_COMPILER, "-o", path, src);
         if(forge_run_cmd(&cmd,.free = true))
         {
@@ -227,7 +325,7 @@ void forge_rebuild_yourself_
 }
 
 void forge_append_many_cmd_null
-(Cmd* cmd,...)
+(cmd_t* cmd,...)
 {
     va_list list;
     va_start(list,cmd);
@@ -251,7 +349,7 @@ void forge_append_many_cmd_null
 }
 
 bool forge_run_cmd_
-(Cmd* cmd,run_cmd_ctx_t ctx)
+(cmd_t* cmd,run_cmd_ctx_t ctx)
 {
     forge_log("%s",cmd->list.data);
     bool status = system(cmd->list.data);
@@ -261,12 +359,12 @@ bool forge_run_cmd_
     return status == 0;
 }
 
-void forge_free_cmd(Cmd* cmd)
+void forge_free_cmd(cmd_t* cmd)
 {
     forge_da_free(cmd->list);    
 }
 
-void forge_clear_cmd(Cmd* cmd)
+void forge_clear_cmd(cmd_t* cmd)
 {
     forge_da_clear(cmd->list);    
 }
