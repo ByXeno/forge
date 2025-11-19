@@ -224,7 +224,7 @@ void cross_mutex_destroy(cross_mutex_t* m);
             while ((exp_cap) > (list)->capacity) { \
                 (list)->capacity *= 2;             \
             }                                      \
-            (list)->data = realloc((list)->data,(list)->capacity * sizeof(*(list)->data)); \
+            (list)->data = (typeof((list)->data))realloc((list)->data,(list)->capacity * sizeof(*(list)->data)); \
             assert((list)->data != NULL && "Ram is not enough!"); \
         } \
     } while (0)
@@ -800,10 +800,22 @@ bool forge_build_target_
     {
         cmd_t cmd = {0};
         forge_append_cmd(&cmd,C_COMPILER);
-        forge_append_cmd(&cmd,"-o",target.output);
         uint32_t i = 0;
+        uint32_t skip = 0xFFFFFFFF;
         for(;i < target.dep_c;++i)
         {
+            if(strcmp("-c",target.depend[i]) == 0)
+            {
+                forge_append_cmd(&cmd,"-c");
+                skip = i;
+                goto skipped;
+            }
+        }
+        forge_append_cmd(&cmd,"-o",target.output);
+        skipped:
+        for(i = 0;i < target.dep_c;++i)
+        {
+            if(i == skip) continue;
             if(!(*target.depend[i])) continue;
             if(target.depend[i][strlen(target.depend[i])-1] == 'h') continue;
             forge_append_cmd(&cmd,target.depend[i]);
@@ -816,7 +828,8 @@ bool forge_build_target_
         {
             cross_mutex_lock(ctx.async->mutex);
             cross_thread_t* thread = 0;
-            forge_run_async_ctx* as_ctx = malloc(sizeof(forge_run_async_ctx));
+            forge_run_async_ctx* as_ctx =
+            (forge_run_async_ctx*)malloc(sizeof(forge_run_async_ctx));
             as_ctx->cmd = cmd;
             as_ctx->index = ctx.async->count;
             as_ctx->group = ctx.async;
@@ -909,7 +922,7 @@ void forge_append_many_cmd_null
     va_list list;
     va_start(list,cmd);
     char* cur = va_arg(list,char*);
-    char* space = " ";
+    char space[] = {' ',0};
     if(cmd->list.data && cmd->list.count)
     {
         if(!cmd->list.data[cmd->list.count-1])
