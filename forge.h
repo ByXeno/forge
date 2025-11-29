@@ -275,8 +275,6 @@ typedef struct {
     string_t list;
 } cmd_t;
 
-
-cmd_t forge_make_cmd(void);
 #define forge_append_cmd(cmd,...) \
     forge_append_many_cmd_null(cmd,__VA_ARGS__,NULL)
 void forge_append_many_cmd_null(cmd_t* cmd,...);
@@ -299,11 +297,6 @@ void forge_free_strlist(str_list_t list);
 uint32_t forge_count_strlist(str_list_t list);
 
 bool forge_rm_path(char* path);
-#if 0
-#define forge_rm_path_list(...) \
-forge_rm_path_list_(1,__VA_ARGS__,NULL)
-#endif
-bool forge_rm_path_list_(uint32_t start,...);
 bool forge_rm_path_strlist(str_list_t list);
 
 #define forge_add_prefix(fix,...) \
@@ -335,6 +328,44 @@ typedef struct {
 void forge_wait_async_group(async_group_t* group);
 async_group_t forge_create_async_group(void);
 void forge_async_group_free(async_group_t* group);
+
+#if FORGE_SHORT_NAMES
+#define ag_t async_group_t
+#define sl_t str_list_t
+#endif // FORGE_SHORT_NAMES
+#if FORGE_STRIP_PREFIX
+#define da_alloc forge_da_alloc
+#define da_append forge_da_append
+#define da_append_many forge_da_append_many
+#define da_append_null forge_da_append_null
+#define da_append_cstr forge_da_append_cstr
+#define da_clear forge_da_clear
+#define da_free forge_da_free
+#define append_cmd forge_append_cmd
+#define append_many_cmd_null forge_append_many_cmd_null
+#define append_cmd_strlist forge_append_cmd_strlist
+#define clear_cmd forge_clear_cmd
+#define free_cmd forge_free_cmd
+#define rebuild_yourself forge_rebuild_yourself
+#define rename forge_rename
+#define check_ts_list forge_check_timestaps_after_list
+#define check_ts_1af2 forge_check_timestaps_1after2
+#define change_extension forge_change_extension
+#define change_extension_strlist forge_change_extension_strlist
+#define change_extension forge_change_extension
+#define free_strlist forge_free_strlist
+#define count_strlist forge_count_strlist
+#define rm_path forge_rm_path
+#define rm_path_strlist forge_rm_path_strlist
+#define add_prefix forge_add_prefix
+#define add_suffix forge_add_suffix
+#define add_fix forge_addfix
+#define run_cmd forge_run_cmd
+#define wait_async_group forge_wait_async_group
+#define create_async_group forge_create_async_group
+#define async_group_free forge_async_group_free
+#endif // FORGE_STRIP_PREFIX
+
 
 #endif // FORGE_H_
 
