@@ -28,6 +28,14 @@
 #  define CROSS_OS_POSIX 1
 #endif
 
+#ifdef _WIN32
+#  define CROSS_OS_WINDOWS 1
+#  define PATH_JOIN "\\"
+#else
+#  define CROSS_OS_POSIX 1
+#  define PATH_JOIN "/"
+#endif
+
 //──────────────────────────────
 // PLATFORM INFO
 //──────────────────────────────
@@ -249,29 +257,63 @@ do {memset((list)->data,0,(list)->capacity); (list)->count = 0; } while(0)
 #define forge_da_free(list) \
 do { free((list)->data); (list)->data = NULL; (list)->count = 0; (list)->capacity = 0; } while(0)
 
+typedef enum {
+    no_flags = 0,
+    all_build = 1 << 1,
+} forge_flags_t;
+static uint64_t forge_flags;
+
 typedef struct {
     char* data;
     uint32_t count;
     uint32_t capacity;
 } string_t;
 
+typedef char** str_list_t;
+
 typedef struct {
     string_t list;
 } cmd_t;
+
 
 cmd_t forge_make_cmd(void);
 #define forge_append_cmd(cmd,...) \
     forge_append_many_cmd_null(cmd,__VA_ARGS__,NULL)
 void forge_append_many_cmd_null(cmd_t* cmd,...);
+void forge_append_cmd_strlist(cmd_t* cmd,str_list_t);
 void forge_clear_cmd(cmd_t* cmd);
 void forge_free_cmd(cmd_t* cmd);
 
-#define forge_rebuild_yourself() forge_rebuild_yourself_(argv[0],__FILE__)
-void forge_rebuild_yourself_(char* path,char* src);
+#define forge_rebuild_yourself() forge_rebuild_yourself_(__FILE__,argv,argc)
+void forge_rebuild_yourself_(char* src,char** argv,int argc);
 
 bool forge_rename(char* path1,char* path2);
 bool forge_check_timestaps_after_list(const char* file,const char** paths,uint32_t count);
 bool forge_check_timestaps_1after2(const char* path1,const char* path2);
+#define forge_change_extension_many(ext,...) \
+    forge_change_extension_(ext,__VA_ARGS__,NULL)
+str_list_t forge_change_extension_(char* ext,...);
+str_list_t forge_change_extension_strlist(char* ext,str_list_t list);
+char* forge_change_extension(char* ext,char* str);
+void forge_free_strlist(str_list_t list);
+uint32_t forge_count_strlist(str_list_t list);
+
+bool forge_rm_path(char* path);
+#if 0
+#define forge_rm_path_list(...) \
+forge_rm_path_list_(1,__VA_ARGS__,NULL)
+#endif
+bool forge_rm_path_list_(uint32_t start,...);
+bool forge_rm_path_strlist(str_list_t list);
+
+#define forge_add_prefix(fix,...) \
+    forge_addfix(true,fix,__VA_ARGS__,NULL)
+
+#define forge_add_suffix(fix,...) \
+    forge_addfix(false,fix,__VA_ARGS__,NULL)
+
+str_list_t forge_addfix
+(bool is_prefix,char* fix,...);
 
 typedef struct {
     bool clear;
@@ -284,44 +326,15 @@ typedef struct {
 bool forge_run_cmd_(cmd_t* cmd,run_cmd_ctx_t ctx);
 
 typedef struct {
-    const char* output;
-    const char** depend;
-    const uint32_t dep_c;
-} forge_target_t;
-
-typedef struct {
     cross_thread_t** data;
     uint32_t count;
     uint32_t capacity;
     cross_mutex_t* mutex;
 } async_group_t;
 
-typedef struct {
-    async_group_t* async;
-} forge_build_target_ctx_t;
-
-#define forge_build_target(target,...) \
-    forge_build_target_(target,(forge_build_target_ctx_t){__VA_ARGS__})
-bool forge_build_target_(forge_target_t target,forge_build_target_ctx_t ctx);
 void forge_wait_async_group(async_group_t* group);
 async_group_t forge_create_async_group(void);
 void forge_async_group_free(async_group_t* group);
-
-#define FORGE_TARGET(name, output_name, ...) \
-    static const char *name##_depends[] = { __VA_ARGS__ }; \
-    static const forge_target_t name = { \
-        .output = output_name, \
-        .depend = name##_depends, \
-        .dep_c = sizeof(name##_depends) / sizeof(*name##_depends), \
-    };
-
-#define FORGE_TARGET_BUILD(name,output_name,...) \
-    FORGE_TARGET(name,output_name,__VA_ARGS__); \
-    forge_build_target(name);
-
-#define FORGE_TARGET_BUILD_ASYNC(group,name,output_name,...) \
-    FORGE_TARGET(name,output_name,__VA_ARGS__); \
-    forge_build_target(name,.async = group);
 
 #endif // FORGE_H_
 
@@ -667,7 +680,7 @@ char* cross_executable_path(void) {
 //──────────────────────────────
 // THREADS / MUTEX
 //──────────────────────────────
-struct cross_thread { 
+struct cross_thread {
 #ifdef _WIN32
     HANDLE handle;
 #else
@@ -792,57 +805,6 @@ void forge_run_async
     free(ctx);
 }
 
-bool forge_build_target_
-(forge_target_t target,forge_build_target_ctx_t ctx)
-{
-    if(forge_check_timestaps_after_list(
-    target.output,target.depend,target.dep_c))
-    {
-        cmd_t cmd = {0};
-        forge_append_cmd(&cmd,C_COMPILER);
-        uint32_t i = 0;
-        uint32_t skip = 0xFFFFFFFF;
-        for(;i < target.dep_c;++i)
-        {
-            if(strcmp("-c",target.depend[i]) == 0)
-            {
-                forge_append_cmd(&cmd,"-c");
-                skip = i;
-                goto skipped;
-            }
-        }
-        forge_append_cmd(&cmd,"-o",target.output);
-        skipped:
-        for(i = 0;i < target.dep_c;++i)
-        {
-            if(i == skip) continue;
-            if(!(*target.depend[i])) continue;
-            if(target.depend[i][strlen(target.depend[i])-1] == 'h') continue;
-            forge_append_cmd(&cmd,target.depend[i]);
-        }
-        if(!ctx.async)
-        {
-            return forge_run_cmd(&cmd,.free = true);
-        }
-        else
-        {
-            cross_mutex_lock(ctx.async->mutex);
-            cross_thread_t* thread = 0;
-            forge_run_async_ctx* as_ctx =
-            (forge_run_async_ctx*)malloc(sizeof(forge_run_async_ctx));
-            as_ctx->cmd = cmd;
-            as_ctx->index = ctx.async->count;
-            as_ctx->group = ctx.async;
-            thread = cross_thread_create(forge_run_async,as_ctx);
-            forge_da_append(ctx.async,thread);
-            cross_mutex_unlock(ctx.async->mutex);
-            return true;
-        }
-    }
-    forge_log("'%s' is up to date! Skipping...",target.output);
-    return true;
-}
-
 bool forge_check_timestaps_after_list
 (const char* file,const char** paths,uint32_t count)
 {
@@ -878,6 +840,35 @@ bool forge_rename
     return true;
 }
 
+bool forge_rm_path_list
+(uint32_t start,...)
+{
+    va_list list;
+    va_start(list,start);
+    char* cur = va_arg(list,char*);
+    while(*cur) {
+        bool res = forge_rm_path(cur);
+        if(!res) return false;
+        cur = va_arg(list,char*);
+    }
+    va_end(list);
+    return true;
+}
+
+bool forge_rm_path_strlist
+(str_list_t list)
+{
+    while(*list) {
+        forge_log("Removing %s",*list);
+        if(!cross_remove(*list)){
+            forge_error("could not remove file %s",*list);
+            return false;
+        }
+        ++list;
+    }
+    return true;
+}
+
 bool forge_rm_path
 (char* path)
 {
@@ -890,10 +881,20 @@ bool forge_rm_path
 }
 
 void forge_rebuild_yourself_
-(char* path,char* src)
+(char* src,char** argv,int argc)
 {
-    const char* paths[] = {src,"forge.h"};
-    bool need_rebuild = forge_check_timestaps_after_list(path,paths,2);
+    char* path = argv[0];
+    forge_flags = no_flags;
+    bool need_rebuild = false;
+    for(uint32_t i = 0;i < argc;++i)
+    {
+        if(strcmp("-f",argv[i]) == 0) {
+            forge_flags = forge_flags | all_build;
+            need_rebuild = true;
+        }
+    }
+    if(!need_rebuild)
+    {need_rebuild = !forge_check_timestaps_1after2(path,src);}
     string_t old_name = {0};
     forge_da_append_cstr(&old_name,path);
     forge_da_append_cstr(&old_name,".old");
@@ -901,7 +902,11 @@ void forge_rebuild_yourself_
     if(need_rebuild) {
         forge_rename(old_name.data,path);
         cmd_t cmd = {0};
+        #if IS_MSVC
+        forge_append_cmd(&cmd,C_COMPILER, "/O", path, src);
+        #else
         forge_append_cmd(&cmd,C_COMPILER, "-o", path, src);
+        #endif
         if(forge_run_cmd(&cmd,.free = true))
         {
             forge_rm_path(old_name.data);
@@ -914,6 +919,16 @@ void forge_rebuild_yourself_
         exit(0);
     }
     forge_da_free(&old_name);
+}
+
+void forge_append_cmd_strlist
+(cmd_t* cmd,str_list_t list)
+{
+    while(*list)
+    {
+        forge_append_cmd(cmd,*list);
+        ++list;
+    }
 }
 
 void forge_append_many_cmd_null
@@ -939,6 +954,114 @@ void forge_append_many_cmd_null
     forge_da_append_null(&cmd->list);
     va_end(list);
 }
+
+char* forge_change_extension
+(char* ext,char* str)
+{
+    char *ptr = 0,*tmp = 0;
+    ptr = strrchr(str,'.');
+    uint32_t ext_len = strlen(ext);
+    if(!ptr) {
+        tmp = (char*)malloc(strlen(str) + ext_len + 1);
+        sprintf(tmp,"%s.%s",str,ext);
+    }else {
+        tmp = (char*)malloc((ptr-str) + ext_len + 1);
+        memcpy(tmp,str,(ptr-str));
+        tmp[(ptr-str)] = '.';
+        memcpy(&tmp[(ptr-str)+1],ext,ext_len);
+    }
+    return tmp;
+}
+
+str_list_t forge_change_extension_strlist
+(char* ext,str_list_t list)
+{
+    uint32_t count = forge_count_strlist(list);
+    char** strs = (char**)malloc(sizeof(char*)*(count+1));
+    strs[count] = 0;
+    for(uint32_t i = 0;i < count;++i)
+    {
+        strs[i] = forge_change_extension(ext,list[i]);
+    }
+    return strs;
+}
+
+str_list_t forge_change_extension_
+(char* ext,...)
+{
+    va_list list_counter,list;
+    uint32_t count = 0;
+    va_start(list_counter,ext);
+    char* cur = va_arg(list_counter,char*);
+    while(cur) {count++;cur = va_arg(list_counter,char*);}
+    va_end(list_counter);
+    char** strs = (char**)malloc(sizeof(char*)*(count+1));
+    strs[count] = 0;
+    va_start(list,ext);
+    cur = va_arg(list,char*);
+    uint32_t i = 0;
+    while(cur)
+    {
+        strs[i++] = forge_change_extension(ext,cur);
+        cur = va_arg(list,char*);
+    }
+    va_end(list);
+    return strs;
+}
+
+str_list_t forge_addfix
+(bool is_prefix,char* fix,...)
+{
+    va_list list_counter,list;
+    uint32_t count = 0;
+    va_start(list_counter,fix);
+    char* cur = va_arg(list_counter,char*);
+    while(cur) {count++;cur = va_arg(list_counter,char*);}
+    va_end(list_counter);
+    char** strs = (char**)malloc(sizeof(char*)*(count+1));
+    strs[count] = 0;
+    va_start(list,fix);
+    cur = va_arg(list,char*);
+    uint32_t i = 0;
+    uint32_t fix_len = strlen(fix);
+    char* tmp = 0;
+    char* ptr = 0;
+    while(cur)
+    {
+        tmp = (char*)malloc(strlen(cur) + fix_len + 1);
+        if(is_prefix)
+        {sprintf(tmp,"%s%s",fix,cur);}
+        else
+        {sprintf(tmp,"%s%s",cur,fix);}
+        strs[i++] = tmp;
+        cur = va_arg(list,char*);
+    }
+    va_end(list);
+    return strs;
+}
+
+void forge_free_strlist
+(str_list_t list)
+{
+    str_list_t ptr = list;
+    while(*ptr) {
+        free(*ptr);
+        ++ptr;
+    }
+    free(list);
+}
+
+uint32_t forge_count_strlist
+(str_list_t list)
+{
+    uint32_t count = 0;
+    while(*list) {
+        ++list;
+        ++count;
+    }
+    return count;
+}
+
 
 bool forge_run_cmd_
 (cmd_t* cmd,run_cmd_ctx_t ctx)
