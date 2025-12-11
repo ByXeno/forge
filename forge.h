@@ -329,11 +329,11 @@ void forge_wait_async_group(async_group_t* group);
 async_group_t forge_create_async_group(void);
 void forge_async_group_free(async_group_t* group);
 
-#if FORGE_SHORT_NAMES
+#ifdef FORGE_SHORT_NAMES
 #define ag_t async_group_t
 #define sl_t str_list_t
 #endif // FORGE_SHORT_NAMES
-#if FORGE_STRIP_PREFIX
+#ifdef FORGE_STRIP_PREFIX
 #define da_alloc forge_da_alloc
 #define da_append forge_da_append
 #define da_append_many forge_da_append_many
@@ -347,7 +347,7 @@ void forge_async_group_free(async_group_t* group);
 #define clear_cmd forge_clear_cmd
 #define free_cmd forge_free_cmd
 #define rebuild_yourself forge_rebuild_yourself
-#define rename forge_rename
+#define f_rename forge_rename
 #define check_ts_list forge_check_timestaps_after_list
 #define check_ts_1af2 forge_check_timestaps_1after2
 #define change_extension forge_change_extension
@@ -864,7 +864,7 @@ bool forge_rename
 (char* to,char* from)
 {
     forge_log("%s -> %s",from,to);
-    if (cross_rename(from, to) < 0) {
+    if (!cross_rename(from, to)) {
         forge_error("could not rename %s to %s", from, to);
         return false;
     }
